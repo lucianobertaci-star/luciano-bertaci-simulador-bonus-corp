@@ -20,7 +20,7 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- INICIALIZAÇÃO DE DADOS (SESSION STATE) ---
+# --- INICIALIZAÇÃO DE DADOS ---
 
 # 1. Múltiplos
 if 'config_multiplos' not in st.session_state:
@@ -32,14 +32,12 @@ if 'config_multiplos' not in st.session_state:
     ]
     st.session_state.config_multiplos = pd.DataFrame(data)
 
-# 2. Fator (Novo)
+# 2. Fator Global
 if 'config_fator' not in st.session_state:
-    data_fator = [
-        {"Parâmetro": "Fator Global", "Mínimo": 1.0, "Parcial": 1.0, "Meta": 1.0, "Superado": 1.0}
-    ]
+    data_fator = [{"Parâmetro": "Fator Global", "Mínimo": 1.0, "Parcial": 1.0, "Meta": 1.0, "Superado": 1.0}]
     st.session_state.config_fator = pd.DataFrame(data_fator)
 
-# 3. Faixas
+# 3. Faixas (Gatilhos)
 if 'config_faixas' not in st.session_state:
     data_faixas = [
         {"Nível": "Mínimo", "Gatilho": 0.90},
@@ -49,7 +47,14 @@ if 'config_faixas' not in st.session_state:
     ]
     st.session_state.config_faixas = pd.DataFrame(data_faixas)
 
-# 4. Funcionários
+# 4. KPIs Corporativos (NOVO)
+if 'kpis_corp' not in st.session_state:
+    st.session_state.kpis_corp = [
+        {"Indicador": "Receitas", "Peso (%)": 80, "Meta ($)": 40735845.0, "Realizado ($)": 38700644.0},
+        {"Indicador": "Fluxo de Caixa", "Peso (%)": 20, "Meta ($)": 16922142.0, "Realizado ($)": 18154955.0}
+    ]
+
+# 5. Funcionários
 if 'funcionarios' not in st.session_state:
     st.session_state.funcionarios = [
         {"ID": 1, "Nome": "João Silva", "Cargo": "Operacional", "Salario": 3500.0, "Tempo_Casa_Meses": 12},
@@ -57,25 +62,24 @@ if 'funcionarios' not in st.session_state:
         {"ID": 3, "Nome": "Carlos CEO", "Cargo": "Estratégico", "Salario": 45000.0, "Tempo_Casa_Meses": 12}
     ]
 
-# --- FUNÇÃO DE INTERPOLAÇÃO GENÉRICA ---
+# --- FUNÇÃO DE INTERPOLAÇÃO ---
 def interpolar_valores(atingimento_corp, df_origem, coluna_chave=None, valor_chave=None):
-    # Pega os gatilhos X
-    df_faixas = st.session_state.config_faixas
+    # Recupera gatilhos
     try:
-        x_points = [
-            df_faixas.loc[df_faixas['Nível']=='Mínimo', 'Gatilho'].values[0],
-            df_faixas.loc[df_faixas['Nível']=='Parcial', 'Gatilho'].values[0],
-            df_faixas.loc[df_faixas['Nível']=='Meta', 'Gatilho'].values[0],
-            df_faixas.loc[df_faixas['Nível']=='Superado', 'Gatilho'].values[0]
-        ]
+        df_faixas = st.session_state.config_faixas
+        min_g = df_faixas.loc[df_faixas['Nível']=='Mínimo', 'Gatilho'].values[0]
+        par_g = df_faixas.loc[df_faixas['Nível']=='Parcial', 'Gatilho'].values[0]
+        meta_g = df_faixas.loc[df_faixas['Nível']=='Meta', 'Gatilho'].values[0]
+        super_g = df_faixas.loc[df_faixas['Nível']=='Superado', 'Gatilho'].values[0]
+        x_points = [min_g, par_g, meta_g, super_g]
     except: return 0.0
 
-    # Pega os valores Y
+    # Recupera valores Y (Múltiplos ou Fatores)
     if coluna_chave and valor_chave:
         row = df_origem[df_origem[coluna_chave] == valor_chave]
     else:
-        row = df_origem.iloc[[0]] # Pega a primeira linha (caso do Fator)
-
+        row = df_origem.iloc[[0]] # Pega primeira linha (Fator Global)
+        
     if row.empty: return 0.0
     
     y_points = [
@@ -83,17 +87,32 @@ def interpolar_valores(atingimento_corp, df_origem, coluna_chave=None, valor_cha
         row['Meta'].values[0], row['Superado'].values[0]
     ]
     
-    # Se não atingiu o gatilho mínimo, é zero
-    if atingimento_corp < x_points[0]: return 0.0
-    
+    if atingimento_corp < min_g: return 0.0
     return np.interp(atingimento_corp, x_points, y_points)
+
+# --- FUNÇÃO AUXILIAR PARA NOTA PADRÃO (0.6 a 1.2) ---
+# Usada para calcular a nota de cada KPI corporativo individualmente
+def interpolar_nota_padrao(atingimento):
+    # Define uma escala padrão de pontuação caso não seja salário
+    # 90% atinge 0.6 | 100% atinge 1.0 | 110% atinge 1.2
+    df_faixas = st.session_state.config_faixas
+    min_g = df_faixas.loc[df_faixas['Nível']=='Mínimo', 'Gatilho'].values[0]
+    par_g = df_faixas.loc[df_faixas['Nível']=='Parcial', 'Gatilho'].values[0]
+    meta_g = df_faixas.loc[df_faixas['Nível']=='Meta', 'Gatilho'].values[0]
+    super_g = df_faixas.loc[df_faixas['Nível']=='Superado', 'Gatilho'].values[0]
+    x = [min_g, par_g, meta_g, super_g]
+    y = [0.6, 0.8, 1.0, 1.2] # Score padrão
+    
+    if atingimento < min_g: return 0.0
+    return np.interp(atingimento, x, y)
 
 # --- VISUAL ---
 st.title("🎯 Simulador de Bônus Corporativo")
 st.markdown("""
 <style>
-    .metric-card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; border-left: 5px solid #1f77b4;}
-    .formula-box {background-color: #e8f4f8; padding: 15px; border-radius: 5px; font-family: monospace; color: #0e1117;}
+    .metric-card {background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid #1f77b4;}
+    .formula-box {background-color: #e8f4f8; padding: 10px; border-radius: 5px; font-family: monospace; color: #0e1117;}
+    .table-container {border: 1px solid #ddd; border-radius: 5px; padding: 5px;}
 </style>
 """, unsafe_allow_html=True)
 st.markdown("---")
@@ -113,11 +132,19 @@ if menu == "0. Configurações Gerais":
             "Meta": st.column_config.NumberColumn(format="%.1f"),
             "Superado": st.column_config.NumberColumn(format="%.1f"),
         },
-        use_container_width=True,
-        key="cfg_mult"
+        use_container_width=True
     )
     
-    st.subheader("2. Fator Global (Ajuste)")
+    st.subheader("2. Faixas de Atingimento (Gatilhos)")
+    st.session_state.config_faixas = st.data_editor(
+        st.session_state.config_faixas,
+        column_config={
+            "Gatilho": st.column_config.NumberColumn(format="%.2f %%", min_value=0.0, max_value=2.0, step=0.01)
+        },
+        use_container_width=True
+    )
+    
+    st.subheader("3. Fator Global")
     st.session_state.config_fator = st.data_editor(
         st.session_state.config_fator,
         column_config={
@@ -126,42 +153,98 @@ if menu == "0. Configurações Gerais":
             "Meta": st.column_config.NumberColumn(format="%.2f"),
             "Superado": st.column_config.NumberColumn(format="%.2f"),
         },
-        use_container_width=True,
-        key="cfg_fat"
-    )
-    
-    st.subheader("3. Faixas de Atingimento (Gatilhos)")
-    st.session_state.config_faixas = st.data_editor(
-        st.session_state.config_faixas,
-        column_config={
-            "Gatilho": st.column_config.NumberColumn(format="%.2f %%", min_value=0.0, max_value=2.0, step=0.01)
-        },
-        use_container_width=True,
-        key="cfg_faixa"
+        use_container_width=True
     )
 
-# --- ABA 1: CORPORATIVO ---
+# --- ABA 1: CORPORATIVO (NOVO SCORECARD) ---
 elif menu == "1. Painel Corporativo":
-    st.header("🏢 Desempenho Corporativo")
+    st.header("🏢 Scorecard Corporativo")
+    
+    # 1. Input de Dados
+    st.info("Cadastre os indicadores e seus respectivos pesos e resultados.")
+    
+    df_kpis = pd.DataFrame(st.session_state.kpis_corp)
+    edited_kpis = st.data_editor(
+        df_kpis,
+        column_config={
+            "Peso (%)": st.column_config.NumberColumn(format="%d %%", min_value=0, max_value=100),
+            "Meta ($)": st.column_config.NumberColumn(format="$ %.2f"),
+            "Realizado ($)": st.column_config.NumberColumn(format="$ %.2f"),
+        },
+        num_rows="dynamic",
+        use_container_width=True,
+        key="editor_kpis"
+    )
+    st.session_state.kpis_corp = edited_kpis.to_dict('records')
+    
+    # 2. Processamento e Cálculo Ponderado
+    st.divider()
+    st.subheader("Apuração dos Resultados")
+    
+    total_peso = 0
+    nota_final_ponderada = 0
+    tabela_detalhada = []
+    
+    # Busca gatilhos para mostrar na tabela (Apenas visualização)
+    df_f = st.session_state.config_faixas
+    min_txt = f"{df_f.loc[df_f['Nível']=='Mínimo', 'Gatilho'].values[0]:.0%}"
+    par_txt = f"{df_f.loc[df_f['Nível']=='Parcial', 'Gatilho'].values[0]:.0%}"
+    met_txt = f"{df_f.loc[df_f['Nível']=='Meta', 'Gatilho'].values[0]:.0%}"
+    sup_txt = f"{df_f.loc[df_f['Nível']=='Superado', 'Gatilho'].values[0]:.0%}"
+    
+    for item in st.session_state.kpis_corp:
+        peso = item['Peso (%)']
+        meta = item['Meta ($)']
+        real = item['Realizado ($)']
+        
+        # Atingimento do Item
+        atingimento = real / meta if meta > 0 else 0
+        
+        # Nota Interpolada deste item (Base 0.6 a 1.2)
+        nota_item = interpolar_nota_padrao(atingimento)
+        
+        # Contribuição Ponderada
+        contrib = nota_item * (peso / 100)
+        
+        total_peso += peso
+        nota_final_ponderada += contrib
+        
+        tabela_detalhada.append({
+            "Indicadores": item['Indicador'],
+            "Peso": f"{peso}%",
+            "Mínimo": min_txt, "Parcial": par_txt, "Meta": met_txt, "Superado": sup_txt,
+            "Meta ($)": meta,
+            "Realizado ($)": real,
+            "% Atingimento": atingimento,
+            "Nota Interpolada": nota_item
+        })
+        
+    # Exibição da Tabela "Estilo Excel" solicitado
+    df_display = pd.DataFrame(tabela_detalhada)
+    st.dataframe(
+        df_display.style.format({
+            "Meta ($)": "R$ {:,.2f}", 
+            "Realizado ($)": "R$ {:,.2f}",
+            "% Atingimento": "{:.2%}",
+            "Nota Interpolada": "{:.2f}"
+        }),
+        use_container_width=True
+    )
+    
+    # Validações e Totais
     c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Indicador: EBITDA/Resultado")
-        meta = st.number_input("Meta (R$)", value=10000000.0, step=100000.0, format="%.2f")
-        real = st.number_input("Realizado (R$)", value=9800000.0, step=100000.0, format="%.2f")
-        atg = real / meta if meta > 0 else 0
-    with c2:
-        st.subheader("Status")
-        st.metric("% Atingimento", f"{atg:.2%}")
-        try:
-            min_t = st.session_state.config_faixas.loc[st.session_state.config_faixas['Nível']=='Mínimo', 'Gatilho'].values[0]
-            if atg < min_t: st.error("❌ Abaixo do Gatilho")
-            else: st.success("✅ Elegível")
-        except: pass
-    st.session_state.atingimento_global = atg
+    if total_peso != 100:
+        c1.error(f"⚠️ A soma dos pesos é {total_peso}%. Ajuste para 100%.")
+    else:
+        c1.metric("Nota Corporativa Final (Ponderada)", f"{nota_final_ponderada:.4f}")
+        c1.success("Pesos validados (100%)")
+        
+    # Salva para usar na simulação
+    st.session_state.nota_corporativa_final = nota_final_ponderada
 
 # --- ABA 2: FUNCIONÁRIOS ---
 elif menu == "2. Gestão de Funcionários":
-    st.header("👥 Cadastro")
+    st.header("👥 Cadastro de Colaboradores")
     with st.expander("➕ Adicionar Novo", expanded=False):
         with st.form("add"):
             c1, c2, c3 = st.columns(3)
@@ -183,24 +266,24 @@ elif menu == "2. Gestão de Funcionários":
 
 # --- ABA 3: SIMULAÇÃO ---
 elif menu == "3. Simulação e Pagamento":
-    st.header("💰 Simulação de Pagamento (Payroll)")
+    st.header("💰 Simulação de Pagamento")
     
-    if 'atingimento_global' not in st.session_state:
-        st.warning("Defina o Painel Corporativo primeiro.")
+    if 'nota_corporativa_final' not in st.session_state:
+        st.warning("⚠️ Calcule o Scorecard Corporativo na Aba 1 primeiro.")
     else:
-        atg_global = st.session_state.atingimento_global
+        # A Nota Corporativa Final agora age como o "Atingimento Global" para buscar o múltiplo
+        # Se a nota final for 1.05, significa que a empresa atingiu 105% da meta agregada
+        nota_corp = st.session_state.nota_corporativa_final
         
-        # --- EXIBIÇÃO DA FÓRMULA ---
         st.markdown("### 📐 Fórmula de Cálculo")
-        st.markdown("""
+        st.markdown(f"""
         <div class='formula-box'>
-        <b>Bônus Final</b> = (Salário Base) x (Fator Tempo) x (Múltiplo Cargo) x (Nota Individual) x (Fator Global)
+        <b>Bônus</b> = (Salário) x (Fator Tempo) x (Múltiplo Cargo [Ref: {nota_corp:.4f}]) x (Nota Individual) x (Fator Global)
         </div>
         """, unsafe_allow_html=True)
-        st.caption(f"Atingimento Corporativo Atual: {atg_global:.2%}")
         
         st.divider()
-        st.subheader("Avaliação e Cálculo")
+        st.subheader("Simulação")
         
         df = pd.DataFrame(st.session_state.funcionarios)
         if not df.empty:
@@ -209,46 +292,38 @@ elif menu == "3. Simulação e Pagamento":
             edited_df = st.data_editor(
                 df,
                 column_config={
-                    "Performance_Individual": st.column_config.NumberColumn("Nota Indiv. (0-1.2)", format="%.2f", step=0.05),
+                    "Performance_Individual": st.column_config.NumberColumn("Nota Indiv.", format="%.2f", step=0.05),
                     "Salario": st.column_config.NumberColumn(format="R$ %.2f")
                 },
                 hide_index=True, use_container_width=True
             )
             
-            if st.button("🚀 Calcular Bônus"):
+            if st.button("🚀 Calcular"):
                 res = []
                 total = 0
                 
-                # Interpola o FATOR GLOBAL uma vez só (pois é igual para todos)
-                fator_global_calc = interpolar_valores(atg_global, st.session_state.config_fator)
+                # Fator Global é baseado na Nota Corp Final
+                fator_glob = interpolar_valores(nota_corp, st.session_state.config_fator)
                 
                 for i, row in edited_df.iterrows():
-                    # Interpola o Múltiplo do Cargo
-                    mult = interpolar_valores(atg_global, st.session_state.config_multiplos, "Cargo", row['Cargo'])
+                    # Múltiplo do cargo também baseado na Nota Corp Final
+                    mult = interpolar_valores(nota_corp, st.session_state.config_multiplos, "Cargo", row['Cargo'])
                     
                     tempo = row['Tempo_Casa_Meses'] / 12
                     indiv = row['Performance_Individual']
-                    
-                    # FÓRMULA FINAL APLICADA
-                    bonus = row['Salario'] * tempo * mult * indiv * fator_global_calc
+                    bonus = row['Salario'] * tempo * mult * indiv * fator_glob
                     
                     res.append({
                         "Nome": row['Nome'], "Cargo": row['Cargo'], "Salário": row['Salario'],
-                        "Múltiplo": mult, "Nota Indiv.": indiv, "Fator Global": fator_global_calc,
-                        "Bônus": bonus
+                        "Múltiplo": mult, "Nota Indiv.": indiv, "Fator Global": fator_glob, "Bônus": bonus
                     })
                     total += bonus
                 
-                df_res = pd.DataFrame(res)
-                c1, c2 = st.columns(2)
-                c1.metric("Total Folha", f"R$ {total:,.2f}")
-                c2.metric("Fator Global Aplicado", f"{fator_global_calc:.2f}")
-                
-                st.dataframe(df_res.style.format({
+                df_r = pd.DataFrame(res)
+                st.metric("Total Folha", f"R$ {total:,.2f}")
+                st.dataframe(df_r.style.format({
                     "Salário": "R$ {:,.2f}", "Bônus": "R$ {:,.2f}", 
                     "Múltiplo": "{:.2f}x", "Nota Indiv.": "{:.0%}", "Fator Global": "{:.2f}"
                 }), use_container_width=True)
-                
-                st.bar_chart(df_res, x="Nome", y="Bônus")
         else:
             st.warning("Sem funcionários.")
