@@ -150,20 +150,20 @@ if menu == "0. Configurações Gerais":
         use_container_width=True
     )
 
-# --- ABA 1: INDICADORES CORPORATIVOS (Renomeado) ---
+# --- ABA 1: INDICADORES CORPORATIVOS ---
 elif menu == "1. Indicadores Corporativos":
     st.header("🏢 Indicadores Corporativos")
     
     st.info("Cadastre os indicadores e seus respectivos pesos e resultados.")
     
     df_kpis = pd.DataFrame(st.session_state.kpis_corp)
-    # Alterado formato para R$ (Reais)
+    # ALTERAÇÃO: Removido "R$" do formato, mantendo apenas %.2f
     edited_kpis = st.data_editor(
         df_kpis,
         column_config={
             "Peso (%)": st.column_config.NumberColumn(format="%d %%", min_value=0, max_value=100),
-            "Meta (R$)": st.column_config.NumberColumn(format="R$ %.2f"),
-            "Realizado (R$)": st.column_config.NumberColumn(format="R$ %.2f"),
+            "Meta (R$)": st.column_config.NumberColumn(format="%.2f"),
+            "Realizado (R$)": st.column_config.NumberColumn(format="%.2f"),
         },
         num_rows="dynamic",
         use_container_width=True
@@ -185,8 +185,8 @@ elif menu == "1. Indicadores Corporativos":
     
     for item in st.session_state.kpis_corp:
         peso = item.get('Peso (%)', 0)
-        meta = item.get('Meta (R$)', 0) # Chave ajustada para R$
-        real = item.get('Realizado (R$)', 0) # Chave ajustada para R$
+        meta = item.get('Meta (R$)', 0)
+        real = item.get('Realizado (R$)', 0)
         
         atingimento = real / meta if meta > 0 else 0
         nota_item = interpolar_nota_padrao(atingimento)
@@ -206,11 +206,11 @@ elif menu == "1. Indicadores Corporativos":
         })
         
     df_display = pd.DataFrame(tabela_detalhada)
-    # Formatação visual para R$
+    # ALTERAÇÃO: Formatação visual sem R$
     st.dataframe(
         df_display.style.format({
-            "Meta (R$)": "R$ {:,.2f}", 
-            "Realizado (R$)": "R$ {:,.2f}",
+            "Meta (R$)": "{:,.2f}", 
+            "Realizado (R$)": "{:,.2f}",
             "% Atingimento": "{:.2%}",
             "Nota Interpolada": "{:.2f}"
         }),
@@ -225,7 +225,7 @@ elif menu == "1. Indicadores Corporativos":
         
     st.session_state.nota_corporativa_final = nota_final_ponderada
 
-# --- ABA 2: FUNCIONÁRIOS (Igual V2.4) ---
+# --- ABA 2: FUNCIONÁRIOS ---
 elif menu == "2. Gestão de Funcionários":
     st.header("👥 Cadastro de Colaboradores")
     with st.expander("➕ Adicionar Novo", expanded=False):
@@ -242,12 +242,13 @@ elif menu == "2. Gestão de Funcionários":
                 st.rerun()
     
     if st.session_state.funcionarios:
-        st.dataframe(pd.DataFrame(st.session_state.funcionarios).style.format({"Salario": "R$ {:,.2f}"}), use_container_width=True)
+        # ALTERAÇÃO: Salário formatado apenas com números
+        st.dataframe(pd.DataFrame(st.session_state.funcionarios).style.format({"Salario": "{:,.2f}"}), use_container_width=True)
         if st.button("Limpar Lista"):
             st.session_state.funcionarios = []
             st.rerun()
 
-# --- ABA 3: SIMULAÇÃO (Igual V2.4) ---
+# --- ABA 3: SIMULAÇÃO ---
 elif menu == "3. Simulação e Pagamento":
     st.header("💰 Simulação de Pagamento")
     
