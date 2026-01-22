@@ -19,7 +19,7 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- INICIALIZAÇÃO DE DADOS ---
+# --- DADOS INICIAIS ---
 if 'config_multiplos' not in st.session_state:
     data = [
         {"Cargo": "Estagiário", "Mínimo": 0.6, "Parcial": 0.8, "Meta": 1.0, "Superado": 1.2},
@@ -54,14 +54,15 @@ if 'funcionarios' not in st.session_state:
         {"ID": 2, "Nome": "Maria Souza", "Cargo": "Tático", "Salario": 12000.0, "Tempo_Casa_Meses": 12}
     ]
 
-# --- FUNÇÕES DE CÁLCULO ---
+# --- FUNÇÕES DE CÁLCULO (NOVA LÓGICA DE DEGRAU) ---
 
 def get_escala_padrao():
-    # Define a escala de pontuação (Score) padrão
+    # Escala de Score: 0.6 (Min), 0.8 (Parcial), 1.0 (Meta), 1.2 (Super)
     return [0.6, 0.8, 1.0, 1.2]
 
 def interpolar_nota_kpi(atingimento_pct):
-    # Converte % Atingimento (ex: 95%) em Nota (ex: 0.8)
+    # Transforma % de Atingimento em Score (0.6 a 1.2)
+    # AQUI MANTEMOS A INTERPOLAÇÃO para ser justo na apuração da nota corporativa
     df_faixas = st.session_state.config_faixas
     try:
         x_gatilhos = [
@@ -72,16 +73,13 @@ def interpolar_nota_kpi(atingimento_pct):
         ]
     except: return 0.0
     
-    y_scores = get_escala_padrao() # [0.6, 0.8, 1.0, 1.2]
+    y_scores = get_escala_padrao()
     
-    # Se não atingiu o mínimo do gatilho, nota é 0
     if atingimento_pct < x_gatilhos[0]: return 0.0
-    
     return np.interp(atingimento_pct, x_gatilhos, y_scores)
 
-def interpolar_multiplo_final(nota_final_score, df_origem, col_filtro=None, val_filtro=None):
-    # Converte Nota Final (ex: 1.0) em Múltiplo Salarial
-    # CORREÇÃO: Usa a Escala de Pontos como Eixo X, não os Gatilhos %
+def buscar_valor_degrau(nota_final_score, df_origem, col_filtro=None, val_filtro=None):
+    # LÓGICA DE DEGRAU (STEP) - Busca o valor exato da faixa
     
     if col_filtro and val_filtro:
         row = df_origem[df_origem[col_filtro] == val_filtro]
@@ -89,17 +87,19 @@ def interpolar_multiplo_final(nota_final_score, df_origem, col_filtro=None, val_
         row = df_origem.iloc[[0]]
         
     if row.empty: return 0.0
+    row = row.iloc[0] # Pega a série
     
-    x_points = get_escala_padrao() # [0.6, 0.8, 1.0, 1.2]
-    y_points = [
-        row['Mínimo'].values[0], row['Parcial'].values[0], 
-        row['Meta'].values[0], row['Superado'].values[0]
-    ]
-    
-    # Se a nota for menor que o Mínimo da escala (0.6), bônus é 0
-    if nota_final_score < 0.6: return 0.0
-    
-    return np.interp(nota_final_score, x_points, y_points)
+    # Verifica em qual degrau a nota se enquadra (de cima para baixo)
+    if nota_final_score >= 1.2:
+        return row['Superado']
+    elif nota_final_score >= 1.0:
+        return row['Meta']
+    elif nota_final_score >= 0.8:
+        return row['Parcial']
+    elif nota_final_score >= 0.6:
+        return row['Mínimo']
+    else:
+        return 0.0 # Não atingiu gatilho mínimo
 
 # --- VISUAL ---
 st.title("🎯 Simulador de Bônus Corporativo")
@@ -113,11 +113,10 @@ st.markdown("---")
 
 menu = st.sidebar.radio("Navegação", ["0. Configurações Gerais", "1. Indicadores Corporativos", "2. Gestão de Funcionários", "3. Simulação e Pagamento"])
 
-# --- ABA 0: CONFIGURAÇÕES ---
+# --- ABA 0 ---
 if menu == "0. Configurações Gerais":
     st.header("⚙️ Parâmetros do Sistema")
     c1, c2 = st.columns(2)
-    
     with c1:
         st.subheader("1. Múltiplos Salariais")
         st.session_state.config_multiplos = st.data_editor(
@@ -139,7 +138,6 @@ if menu == "0. Configurações Gerais":
                 "Superado": st.column_config.NumberColumn(format="%.2f")
             }, use_container_width=True
         )
-        
     with c2:
         st.subheader("2. Faixas de Atingimento (%)")
         st.session_state.config_faixas = st.data_editor(
@@ -149,21 +147,18 @@ if menu == "0. Configurações Gerais":
             }, use_container_width=True
         )
 
-# --- ABA 1: INDICADORES ---
+# --- ABA 1 ---
 elif menu == "1. Indicadores Corporativos":
     st.header("🏢 Indicadores Corporativos")
     
-    # Tabela de Input com R$
     df_k = pd.DataFrame(st.session_state.kpis_corp)
     edited_k = st.data_editor(
         df_k,
         column_config={
             "Peso (%)": st.column_config.NumberColumn(format="%d %%", min_value=0, max_value=100),
-            "Meta (R$)": st.column_config.NumberColumn(format="R$ %.2f", min_value=0.0),
-            "Realizado (R$)": st.column_config.NumberColumn(format="R$ %.2f", min_value=0.0)
-        },
-        num_rows="dynamic",
-        use_container_width=True
+            "Meta (R$)": st.column_config.NumberColumn(format="%.2f", min_value=0.0),
+            "Realizado (R$)": st.column_config.NumberColumn(format="%.2f", min_value=0.0)
+        }, num_rows="dynamic", use_container_width=True
     )
     st.session_state.kpis_corp = edited_k.to_dict('records')
     
@@ -174,44 +169,37 @@ elif menu == "1. Indicadores Corporativos":
     nota_final = 0
     detalhes = []
     
-    # Títulos para a tabela
     df_f = st.session_state.config_faixas
-    col_cols = ["Mínimo", "Parcial", "Meta", "Superado"]
-    gatilhos_str = [f"{df_f.loc[df_f['Nível']==c, 'Gatilho'].values[0]:.0%}" for c in col_cols]
+    cols = ["Mínimo", "Parcial", "Meta", "Superado"]
+    g_str = [f"{df_f.loc[df_f['Nível']==c, 'Gatilho'].values[0]:.0%}" for c in cols]
     
     for item in st.session_state.kpis_corp:
         p = item.get('Peso (%)', 0)
         m = item.get('Meta (R$)', 0)
         r = item.get('Realizado (R$)', 0)
-        
         atg = r/m if m>0 else 0
-        nota = interpolar_nota_kpi(atg) # Calcula Score (0.6 a 1.2)
-        score_pond = nota * (p/100)
-        
+        nota = interpolar_nota_kpi(atg)
+        score = nota * (p/100)
         total_peso += p
-        nota_final += score_pond
-        
+        nota_final += score
         detalhes.append({
-            "Indicador": item.get('Indicador', ''),
-            "Peso": f"{p}%",
-            "Mínimo": gatilhos_str[0], "Parcial": gatilhos_str[1], 
-            "Meta": gatilhos_str[2], "Superado": gatilhos_str[3],
-            "Meta (R$)": m, "Realizado (R$)": r,
-            "% Ating.": atg, "Nota": nota
+            "Indicador": item.get('Indicador',''), "Peso": f"{p}%",
+            "Mínimo": g_str[0], "Parcial": g_str[1], "Meta": g_str[2], "Superado": g_str[3],
+            "Meta (R$)": m, "Realizado (R$)": r, "% Ating.": atg, "Nota": nota
         })
     
     st.dataframe(pd.DataFrame(detalhes).style.format({
-        "Meta (R$)": "R$ {:,.2f}", "Realizado (R$)": "R$ {:,.2f}", 
+        "Meta (R$)": "{:,.2f}", "Realizado (R$)": "{:,.2f}", 
         "% Ating.": "{:.2%}", "Nota": "{:.2f}"
     }), use_container_width=True)
     
     c1, c2 = st.columns(2)
     if total_peso != 100: c1.error(f"Pesos: {total_peso}%. Ajuste para 100%.")
-    else: 
+    else:
         c1.metric("Nota Corporativa Final (Score)", f"{nota_final:.4f}")
         st.session_state.nota_corporativa_final = nota_final
 
-# --- ABA 2: FUNCIONÁRIOS ---
+# --- ABA 2 ---
 elif menu == "2. Gestão de Funcionários":
     st.header("👥 Cadastro")
     with st.expander("Novo Funcionário"):
@@ -225,13 +213,10 @@ elif menu == "2. Gestão de Funcionários":
             if st.form_submit_button("Salvar"):
                 st.session_state.funcionarios.append({"ID": len(st.session_state.funcionarios)+1, "Nome": nome, "Cargo": cargo, "Salario": sal, "Tempo_Casa_Meses": tempo})
                 st.rerun()
-    
-    # Salários formatados em R$
-    st.dataframe(pd.DataFrame(st.session_state.funcionarios).style.format({"Salario": "R$ {:,.2f}"}), use_container_width=True)
-    if st.button("Limpar Lista"):
-        st.session_state.funcionarios = []; st.rerun()
+    st.dataframe(pd.DataFrame(st.session_state.funcionarios).style.format({"Salario": "{:,.2f}"}), use_container_width=True)
+    if st.button("Limpar Lista"): st.session_state.funcionarios = []; st.rerun()
 
-# --- ABA 3: SIMULAÇÃO ---
+# --- ABA 3 ---
 elif menu == "3. Simulação e Pagamento":
     st.header("💰 Simulação de Pagamento")
     
@@ -241,10 +226,10 @@ elif menu == "3. Simulação e Pagamento":
         nota = st.session_state.nota_corporativa_final
         st.markdown(f"""
         <div class='formula-box'>
-        <b>Bônus</b> = Salário x (Meses/12) x Múltiplo[Score: {nota:.2f}] x Nota Indiv. x Fator Global
+        <b>Bônus</b> = Salário x (Meses/12) x Múltiplo(Degrau) x Nota Indiv. x Fator Global
+        <br>Score Corporativo Atual: {nota:.4f}
         </div>
         """, unsafe_allow_html=True)
-        
         st.divider()
         
         df = pd.DataFrame(st.session_state.funcionarios)
@@ -263,14 +248,14 @@ elif menu == "3. Simulação e Pagamento":
                 res = []
                 tot = 0
                 
-                # Fator e Múltiplo agora buscam na escala de PONTOS (0.6 - 1.2), não %
-                fat = interpolar_multiplo_final(nota, st.session_state.config_fator)
+                # BUSCA VALOR EXATO (DEGRAU)
+                fat = buscar_valor_degrau(nota, st.session_state.config_fator)
                 
                 for i, row in edited_df.iterrows():
-                    mult = interpolar_multiplo_final(nota, st.session_state.config_multiplos, "Cargo", row['Cargo'])
+                    # BUSCA VALOR EXATO (DEGRAU)
+                    mult = buscar_valor_degrau(nota, st.session_state.config_multiplos, "Cargo", row['Cargo'])
                     t = row['Tempo_Casa_Meses']/12
                     ind = row['Performance_Individual']
-                    
                     bonus = row['Salario'] * t * mult * ind * fat
                     
                     res.append({
