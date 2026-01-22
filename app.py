@@ -5,6 +5,12 @@ import numpy as np
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Simulador de Bônus | Controladoria", layout="wide")
 
+# --- HELPER FORMATADOR (Padrão BR: 1.000,00) ---
+def formatar_br(valor):
+    if isinstance(valor, (int, float)):
+        return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return valor
+
 # --- SISTEMA DE LOGIN ---
 def check_password():
     if st.secrets.get("PASSWORD") is None: return True
@@ -54,15 +60,10 @@ if 'funcionarios' not in st.session_state:
         {"ID": 2, "Nome": "Maria Souza", "Cargo": "Tático", "Salario": 12000.0, "Tempo_Casa_Meses": 12}
     ]
 
-# --- FUNÇÕES DE CÁLCULO (NOVA LÓGICA DE DEGRAU) ---
-
-def get_escala_padrao():
-    # Escala de Score: 0.6 (Min), 0.8 (Parcial), 1.0 (Meta), 1.2 (Super)
-    return [0.6, 0.8, 1.0, 1.2]
+# --- FUNÇÕES DE CÁLCULO ---
+def get_escala_padrao(): return [0.6, 0.8, 1.0, 1.2]
 
 def interpolar_nota_kpi(atingimento_pct):
-    # Transforma % de Atingimento em Score (0.6 a 1.2)
-    # AQUI MANTEMOS A INTERPOLAÇÃO para ser justo na apuração da nota corporativa
     df_faixas = st.session_state.config_faixas
     try:
         x_gatilhos = [
@@ -72,34 +73,20 @@ def interpolar_nota_kpi(atingimento_pct):
             df_faixas.loc[df_faixas['Nível']=='Superado', 'Gatilho'].values[0]
         ]
     except: return 0.0
-    
     y_scores = get_escala_padrao()
-    
     if atingimento_pct < x_gatilhos[0]: return 0.0
     return np.interp(atingimento_pct, x_gatilhos, y_scores)
 
 def buscar_valor_degrau(nota_final_score, df_origem, col_filtro=None, val_filtro=None):
-    # LÓGICA DE DEGRAU (STEP) - Busca o valor exato da faixa
-    
-    if col_filtro and val_filtro:
-        row = df_origem[df_origem[col_filtro] == val_filtro]
-    else:
-        row = df_origem.iloc[[0]]
-        
+    if col_filtro and val_filtro: row = df_origem[df_origem[col_filtro] == val_filtro]
+    else: row = df_origem.iloc[[0]]
     if row.empty: return 0.0
-    row = row.iloc[0] # Pega a série
-    
-    # Verifica em qual degrau a nota se enquadra (de cima para baixo)
-    if nota_final_score >= 1.2:
-        return row['Superado']
-    elif nota_final_score >= 1.0:
-        return row['Meta']
-    elif nota_final_score >= 0.8:
-        return row['Parcial']
-    elif nota_final_score >= 0.6:
-        return row['Mínimo']
-    else:
-        return 0.0 # Não atingiu gatilho mínimo
+    row = row.iloc[0]
+    if nota_final_score >= 1.2: return row['Superado']
+    elif nota_final_score >= 1.0: return row['Meta']
+    elif nota_final_score >= 0.8: return row['Parcial']
+    elif nota_final_score >= 0.6: return row['Mínimo']
+    else: return 0.0
 
 # --- VISUAL ---
 st.title("🎯 Simulador de Bônus Corporativo")
@@ -113,41 +100,45 @@ st.markdown("---")
 
 menu = st.sidebar.radio("Navegação", ["0. Configurações Gerais", "1. Indicadores Corporativos", "2. Gestão de Funcionários", "3. Simulação e Pagamento"])
 
-# --- ABA 0 ---
+# --- ABA 0: CONFIGURAÇÕES (VERTICALIZADA) ---
 if menu == "0. Configurações Gerais":
     st.header("⚙️ Parâmetros do Sistema")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("1. Múltiplos Salariais")
-        st.session_state.config_multiplos = st.data_editor(
-            st.session_state.config_multiplos,
-            column_config={
-                "Mínimo": st.column_config.NumberColumn(format="%.1f"),
-                "Parcial": st.column_config.NumberColumn(format="%.1f"),
-                "Meta": st.column_config.NumberColumn(format="%.1f"),
-                "Superado": st.column_config.NumberColumn(format="%.1f")
-            }, use_container_width=True
-        )
-        st.subheader("3. Fator Global")
-        st.session_state.config_fator = st.data_editor(
-            st.session_state.config_fator,
-            column_config={
-                "Mínimo": st.column_config.NumberColumn(format="%.2f"),
-                "Parcial": st.column_config.NumberColumn(format="%.2f"),
-                "Meta": st.column_config.NumberColumn(format="%.2f"),
-                "Superado": st.column_config.NumberColumn(format="%.2f")
-            }, use_container_width=True
-        )
-    with c2:
-        st.subheader("2. Faixas de Atingimento (%)")
-        st.session_state.config_faixas = st.data_editor(
-            st.session_state.config_faixas,
-            column_config={
-                "Gatilho": st.column_config.NumberColumn(format="%.2f %%", min_value=0.0, max_value=2.0, step=0.01)
-            }, use_container_width=True
-        )
+    
+    st.subheader("1. Múltiplos Salariais por Cargo")
+    st.session_state.config_multiplos = st.data_editor(
+        st.session_state.config_multiplos,
+        column_config={
+            "Mínimo": st.column_config.NumberColumn(format="%.1f"),
+            "Parcial": st.column_config.NumberColumn(format="%.1f"),
+            "Meta": st.column_config.NumberColumn(format="%.1f"),
+            "Superado": st.column_config.NumberColumn(format="%.1f")
+        }, use_container_width=True
+    )
+    
+    st.divider() # Divisor
+    
+    st.subheader("2. Faixas de Atingimento (%)")
+    st.session_state.config_faixas = st.data_editor(
+        st.session_state.config_faixas,
+        column_config={
+            "Gatilho": st.column_config.NumberColumn(format="%.2f %%", min_value=0.0, max_value=2.0, step=0.01)
+        }, use_container_width=True
+    )
+    
+    st.divider() # Divisor
+    
+    st.subheader("3. Fator Global (Ajuste)")
+    st.session_state.config_fator = st.data_editor(
+        st.session_state.config_fator,
+        column_config={
+            "Mínimo": st.column_config.NumberColumn(format="%.2f"),
+            "Parcial": st.column_config.NumberColumn(format="%.2f"),
+            "Meta": st.column_config.NumberColumn(format="%.2f"),
+            "Superado": st.column_config.NumberColumn(format="%.2f")
+        }, use_container_width=True
+    )
 
-# --- ABA 1 ---
+# --- ABA 1: INDICADORES (FORMATAÇÃO BR) ---
 elif menu == "1. Indicadores Corporativos":
     st.header("🏢 Indicadores Corporativos")
     
@@ -170,8 +161,8 @@ elif menu == "1. Indicadores Corporativos":
     detalhes = []
     
     df_f = st.session_state.config_faixas
-    cols = ["Mínimo", "Parcial", "Meta", "Superado"]
-    g_str = [f"{df_f.loc[df_f['Nível']==c, 'Gatilho'].values[0]:.0%}" for c in cols]
+    cols_lbl = ["Mínimo", "Parcial", "Meta", "Superado"]
+    g_str = [f"{df_f.loc[df_f['Nível']==c, 'Gatilho'].values[0]:.0%}" for c in cols_lbl]
     
     for item in st.session_state.kpis_corp:
         p = item.get('Peso (%)', 0)
@@ -182,16 +173,20 @@ elif menu == "1. Indicadores Corporativos":
         score = nota * (p/100)
         total_peso += p
         nota_final += score
+        
+        # Formatação manual BR para exibição na tabela
         detalhes.append({
-            "Indicador": item.get('Indicador',''), "Peso": f"{p}%",
+            "Indicador": item.get('Indicador',''), 
+            "Peso": f"{p}%",
             "Mínimo": g_str[0], "Parcial": g_str[1], "Meta": g_str[2], "Superado": g_str[3],
-            "Meta (R$)": m, "Realizado (R$)": r, "% Ating.": atg, "Nota": nota
+            "Meta (R$)": formatar_br(m),
+            "Realizado (R$)": formatar_br(r),
+            "% Ating.": f"{atg:.2%}", 
+            "Nota": f"{nota:.2f}"
         })
     
-    st.dataframe(pd.DataFrame(detalhes).style.format({
-        "Meta (R$)": "{:,.2f}", "Realizado (R$)": "{:,.2f}", 
-        "% Ating.": "{:.2%}", "Nota": "{:.2f}"
-    }), use_container_width=True)
+    # Exibe tabela como texto (já formatado no loop)
+    st.table(pd.DataFrame(detalhes))
     
     c1, c2 = st.columns(2)
     if total_peso != 100: c1.error(f"Pesos: {total_peso}%. Ajuste para 100%.")
@@ -199,24 +194,40 @@ elif menu == "1. Indicadores Corporativos":
         c1.metric("Nota Corporativa Final (Score)", f"{nota_final:.4f}")
         st.session_state.nota_corporativa_final = nota_final
 
-# --- ABA 2 ---
+# --- ABA 2: FUNCIONÁRIOS (GRID EXCEL COM ADD/DEL) ---
 elif menu == "2. Gestão de Funcionários":
-    st.header("👥 Cadastro")
-    with st.expander("Novo Funcionário"):
-        with st.form("add"):
-            c1, c2, c3 = st.columns(3)
-            nome = c1.text_input("Nome")
-            cargos = list(st.session_state.config_multiplos['Cargo'].unique())
-            cargo = c2.selectbox("Cargo", cargos)
-            sal = c3.number_input("Salário", step=100.0)
-            tempo = st.number_input("Meses", 1, 12, 12)
-            if st.form_submit_button("Salvar"):
-                st.session_state.funcionarios.append({"ID": len(st.session_state.funcionarios)+1, "Nome": nome, "Cargo": cargo, "Salario": sal, "Tempo_Casa_Meses": tempo})
-                st.rerun()
-    st.dataframe(pd.DataFrame(st.session_state.funcionarios).style.format({"Salario": "{:,.2f}"}), use_container_width=True)
-    if st.button("Limpar Lista"): st.session_state.funcionarios = []; st.rerun()
+    st.header("👥 Cadastro de Colaboradores")
+    st.info("💡 Use o botão '+' para adicionar. Selecione a linha e aperte 'Del' para excluir. Edite clicando nas células.")
+    
+    df_func = pd.DataFrame(st.session_state.funcionarios)
+    
+    # Grid Dinâmico (num_rows="dynamic")
+    edited_func = st.data_editor(
+        df_func,
+        column_config={
+            "ID": st.column_config.NumberColumn(disabled=True), # ID automático não mexe
+            "Cargo": st.column_config.SelectboxColumn(options=list(st.session_state.config_multiplos['Cargo'].unique()), required=True),
+            "Salario": st.column_config.NumberColumn(label="Salário", format="%.2f", min_value=0.0, step=100.0, required=True),
+            "Tempo_Casa_Meses": st.column_config.NumberColumn(label="Meses", min_value=1, max_value=12, step=1, required=True),
+            "Nome": st.column_config.TextColumn(required=True)
+        },
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # Atualiza Session State
+    # Tratamento para gerar IDs automáticos nos novos registros
+    if len(edited_func) > 0:
+        lista_final = edited_func.to_dict('records')
+        for i, f in enumerate(lista_final):
+            if pd.isna(f['ID']): # Se ID for nulo (novo registro)
+                f['ID'] = i + 1  # Dá um ID sequencial
+        st.session_state.funcionarios = lista_final
+    else:
+        st.session_state.funcionarios = []
 
-# --- ABA 3 ---
+# --- ABA 3: SIMULAÇÃO ---
 elif menu == "3. Simulação e Pagamento":
     st.header("💰 Simulação de Pagamento")
     
@@ -239,34 +250,37 @@ elif menu == "3. Simulação e Pagamento":
             edited_df = st.data_editor(
                 df,
                 column_config={
+                    "ID": st.column_config.NumberColumn(disabled=True),
+                    "Nome": st.column_config.TextColumn(disabled=True),
+                    "Cargo": st.column_config.TextColumn(disabled=True),
                     "Performance_Individual": st.column_config.NumberColumn("Nota Indiv.", format="%.2f", step=0.05),
-                    "Salario": st.column_config.NumberColumn(format="R$ %.2f")
+                    "Salario": st.column_config.NumberColumn(format="R$ %.2f", disabled=True)
                 }, hide_index=True, use_container_width=True
             )
             
             if st.button("🚀 Calcular Bônus"):
                 res = []
                 tot = 0
-                
-                # BUSCA VALOR EXATO (DEGRAU)
                 fat = buscar_valor_degrau(nota, st.session_state.config_fator)
                 
                 for i, row in edited_df.iterrows():
-                    # BUSCA VALOR EXATO (DEGRAU)
                     mult = buscar_valor_degrau(nota, st.session_state.config_multiplos, "Cargo", row['Cargo'])
                     t = row['Tempo_Casa_Meses']/12
                     ind = row['Performance_Individual']
                     bonus = row['Salario'] * t * mult * ind * fat
                     
                     res.append({
-                        "Nome": row['Nome'], "Cargo": row['Cargo'], "Salário": row['Salario'],
-                        "Múltiplo": mult, "Nota Indiv.": ind, "Fator": fat, "Bônus": bonus
+                        "Nome": row['Nome'], "Cargo": row['Cargo'], 
+                        "Salário": formatar_br(row['Salario']),
+                        "Múltiplo": mult, "Nota Indiv.": ind, "Fator": fat, 
+                        "Bônus": formatar_br(bonus)
                     })
                     tot += bonus
                 
-                st.metric("Total Folha", f"R$ {tot:,.2f}")
+                st.metric("Total Folha", f"R$ {formatar_br(tot)}")
+                
+                # Tabela Final formatada
                 st.dataframe(pd.DataFrame(res).style.format({
-                    "Salário": "R$ {:,.2f}", "Bônus": "R$ {:,.2f}", 
                     "Múltiplo": "{:.2f}x", "Nota Indiv.": "{:.0%}", "Fator": "{:.2f}"
                 }), use_container_width=True)
-        else: st.warning("Sem funcionários.")
+        else: st.warning("Sem funcionários cadastrados.")
