@@ -5,6 +5,39 @@ import numpy as np
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Simulador de Bônus | Controladoria", layout="wide")
 
+# --- SISTEMA DE LOGIN (SEGURANÇA) ---
+def check_password():
+    """Retorna True se o usuário tiver a senha correta."""
+
+    def password_entered():
+        """Checa se a senha inserida bate com a secreta."""
+        if st.session_state["password"] == st.secrets["PASSWORD"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Não manter senha na memória
+        else:
+            st.session_state["password_correct"] = False
+
+    # Se a senha já estiver correta, retorna True
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # Mostra o campo de input de senha
+    st.text_input(
+        "🔒 Digite a senha de acesso:", type="password", on_change=password_entered, key="password"
+    )
+    
+    if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+        st.error("😕 Senha incorreta. Tente novamente.")
+
+    return False
+
+if not check_password():
+    st.stop()  # PARA TUDO AQUI SE NÃO TIVER LOGADO
+
+# =========================================================
+# DAQUI PARA BAIXO É O CÓDIGO DO SIMULADOR (SÓ CARREGA SE LOGAR)
+# =========================================================
+
 # --- CSS CUSTOMIZADO (Visual Executivo) ---
 st.markdown("""
 <style>
