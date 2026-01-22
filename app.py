@@ -3,32 +3,36 @@ import pandas as pd
 import numpy as np
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Simulador Bônus V3 | Controladoria", layout="wide")
+st.set_page_config(page_title="Simulador Bônus | Controladoria", layout="wide")
 
-# --- CSS PARA FORMATAÇÃO E LAYOUT ---
+# --- CSS CUSTOMIZADO ---
 st.markdown("""
 <style>
     .big-font {font-size: 18px !important; font-weight: bold; color: #333;}
-    .stDataFrame {border: 1px solid #ddd; border-radius: 5px;}
     .metric-card {background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 5px solid #1f77b4;}
+    .stDataFrame {border: 1px solid #ddd; border-radius: 5px;}
 </style>
 """, unsafe_allow_html=True)
 
 # --- SISTEMA DE LOGIN ---
 def check_password():
     if st.secrets.get("PASSWORD") is None: return True
+    
     def password_entered():
         if st.session_state["password"] == st.secrets["PASSWORD"]:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
+
     if st.session_state.get("password_correct", False):
         return True
-    st.text_input("🔒 Senha:", type="password", on_change=password_entered, key="password")
+
+    st.text_input("🔒 Senha de Acesso:", type="password", on_change=password_entered, key="password")
     return False
 
-if not check_password(): st.stop()
+if not check_password():
+    st.stop()
 
 # --- INICIALIZAÇÃO DE DADOS (SESSION STATE) ---
 if 'config_multiplos' not in st.session_state:
@@ -42,6 +46,7 @@ if 'config_multiplos' not in st.session_state:
     st.session_state.config_multiplos = pd.DataFrame(data_mult)
 
 if 'config_fator' not in st.session_state:
+    # NOVO: Tabela de Fator
     data_fator = {
         "Parâmetro": ["Fator Default"],
         "Mínimo": [1.0], "Parcial": [1.0], "Meta": [1.0], "Superado": [1.0]
@@ -62,13 +67,21 @@ if 'metas_corp' not in st.session_state:
     ]
 
 if 'funcionarios' not in st.session_state:
+    # Estrutura baseada na V2 que funcionava
     st.session_state.funcionarios = [
-        {"ID": 1, "Nome": "João Silva", "Cargo": "Tático", "Salario": 12000.0, "Tempo_Casa": 12, 
-         "Metas": [{"Descricao": "Meta Geral", "Peso": 100, "Meta": 100.0, "Realizado": 95.0}]}
+        {
+            "ID": 1, "Nome": "João Silva", "Cargo": "Tático", "Salario": 12000.0, "Tempo_Casa": 12,
+            "Metas": [
+                {"Descricao": "Dashboard Resultados", "Peso": 25, "Meta": 100.0, "Realizado": 50.0},
+                {"Descricao": "Processos Financeiros", "Peso": 25, "Meta": 100.0, "Realizado": 95.0},
+                {"Descricao": "Migração Netsuite", "Peso": 50, "Meta": 100.0, "Realizado": 95.0}
+            ]
+        }
     ]
 
-# --- FUNÇÃO DE INTERPOLAÇÃO UNIVERSAL ---
+# --- FUNÇÃO DE CÁLCULO (UNIVERSAL) ---
 def calcular_interpolacao(realizado_pct, faixas_df, multiplos_row=None):
+    # Extrair gatilhos
     min_g = faixas_df.loc[faixas_df['Nível']=='Mínimo', 'Gatilho (%)'].values[0]
     par_g = faixas_df.loc[faixas_df['Nível']=='Parcial', 'Gatilho (%)'].values[0]
     meta_g = faixas_df.loc[faixas_df['Nível']=='Meta', 'Gatilho (%)'].values[0]
@@ -76,27 +89,32 @@ def calcular_interpolacao(realizado_pct, faixas_df, multiplos_row=None):
     
     x_points = [min_g, par_g, meta_g, super_g]
     
+    # Definir Eixo Y (Múltiplos ou Fatores ou Notas Puras)
     if multiplos_row is not None:
-        # Usa colunas específicas se for DataFrame de Múltiplos
         if 'Mínimo (x)' in multiplos_row:
             y_points = [multiplos_row['Mínimo (x)'], multiplos_row['Parcial (x)'], multiplos_row['Meta (x)'], multiplos_row['Superado (x)']]
-        else: # Fallback para Fator
+        else:
+            # Caso seja a tabela de Fator (que não tem o (x) no nome da coluna)
             y_points = [multiplos_row['Mínimo'], multiplos_row['Parcial'], multiplos_row['Meta'], multiplos_row['Superado']]
     else:
-        y_points = [0.6, 0.8, 1.0, 1.2] # Padrão de Nota
+        # Padrão de Nota de Desempenho (0.6 a 1.2 conforme seu pedido anterior)
+        y_points = [0.6, 0.8, 1.0, 1.2] 
 
-    if realizado_pct < min_g: return 0.0
+    if realizado_pct < min_g:
+        return 0.0
+    
     return np.interp(realizado_pct, x_points, y_points)
 
-# --- MENU ---
-st.sidebar.title("Simulador V3")
-menu = st.sidebar.radio("Navegação", ["1. Configurações Gerais", "2. Painel Corporativo", "3. Gestão Funcionários", "4. Simulação/Pagamento"])
+# --- MENU LATERAL ---
+st.sidebar.title("Simulador Bônus")
+menu = st.sidebar.radio("Ir para:", ["1. Configurações Gerais", "2. Painel Corporativo", "3. Gestão Funcionários", "4. Simulação/Pagamento"])
 
 # --- ABA 1: CONFIGURAÇÕES ---
 if menu == "1. Configurações Gerais":
     st.header("⚙️ Configurações Gerais")
     
     st.subheader("1. Múltiplos Salariais por Cargo")
+    # Formatação com 1 casa decimal conforme pedido
     edited_mult = st.data_editor(
         st.session_state.config_multiplos,
         column_config={
@@ -108,8 +126,20 @@ if menu == "1. Configurações Gerais":
         use_container_width=True
     )
     st.session_state.config_multiplos = edited_mult
+
+    st.subheader("2. Faixas de Atingimento (Gatilhos)")
+    # Movido para baixo conforme pedido
+    edited_faixas = st.data_editor(
+        st.session_state.config_faixas,
+        column_config={
+            "Gatilho (%)": st.column_config.NumberColumn(format="%.2f", min_value=0.0, max_value=2.0)
+        },
+        use_container_width=True
+    )
+    st.session_state.config_faixas = edited_faixas
     
-    st.subheader("2. Fator de Ajuste (Default)")
+    st.subheader("3. Fator Default")
+    # Nova tabela solicitada
     edited_fator = st.data_editor(
         st.session_state.config_fator,
         column_config={
@@ -121,23 +151,14 @@ if menu == "1. Configurações Gerais":
         use_container_width=True
     )
     st.session_state.config_fator = edited_fator
-    
-    st.subheader("3. Faixas de Atingimento (Gatilhos)")
-    edited_faixas = st.data_editor(
-        st.session_state.config_faixas,
-        column_config={
-            "Gatilho (%)": st.column_config.NumberColumn(format="%.2f %%", min_value=0.0, max_value=2.0)
-        },
-        use_container_width=True
-    )
-    st.session_state.config_faixas = edited_faixas
 
 # --- ABA 2: PAINEL CORPORATIVO ---
 elif menu == "2. Painel Corporativo":
-    st.header("🏢 Painel de Metas Corporativas")
+    st.header("🏢 Metas Globais")
     
     df_metas_corp = pd.DataFrame(st.session_state.metas_corp)
     
+    # Grid editável com formatação R$
     edited_corp = st.data_editor(
         df_metas_corp, 
         column_config={
@@ -148,157 +169,197 @@ elif menu == "2. Painel Corporativo":
         num_rows="dynamic", 
         use_container_width=True
     )
+    
     st.session_state.metas_corp = edited_corp.to_dict('records')
     
-    # Cálculo
-    total_score = 0
     st.divider()
-    st.subheader("Resultado Apurado")
+    st.subheader("Apuração do Resultado")
     
-    # Grid de resultados
-    res_data = []
+    total_score = 0
+    detalhes = []
+    
     for item in st.session_state.metas_corp:
-        atg = item['Realizado ($)'] / item['Meta ($)'] if item['Meta ($)'] > 0 else 0
-        nota = calcular_interpolacao(atg, st.session_state.config_faixas, multiplos_row=None)
-        score = nota * (item['Peso']/100)
-        total_score += score
-        res_data.append([item['Indicador'], atg, nota, score])
+        meta = item['Meta ($)']
+        real = item['Realizado ($)']
+        peso = item['Peso']
         
-    df_res = pd.DataFrame(res_data, columns=["Indicador", "% Ating.", "Nota Interp.", "Score Ponderado"])
-    st.dataframe(df_res.style.format({
-        "% Ating.": "{:.1%}", "Nota Interp.": "{:.2f}", "Score Ponderado": "{:.4f}"
+        atingimento = real / meta if meta > 0 else 0
+        
+        # Interpolação para nota (0.6 a 1.2)
+        nota_interpolada = calcular_interpolacao(atingimento, st.session_state.config_faixas)
+        score_pond = nota_interpolada * (peso/100)
+        total_score += score_pond
+        
+        detalhes.append({
+            "Indicador": item['Indicador'],
+            "Atingimento Real": atingimento,
+            "Nota (0.6-1.2)": nota_interpolada,
+            "Score Ponderado": score_pond
+        })
+        
+    df_detalhe = pd.DataFrame(detalhes)
+    st.dataframe(df_detalhe.style.format({
+        "Atingimento Real": "{:.1%}",
+        "Nota (0.6-1.2)": "{:.2f}",
+        "Score Ponderado": "{:.4f}"
     }), use_container_width=True)
     
     st.metric("Nota Corporativa Final", f"{total_score:.4f}")
     st.session_state.nota_corporativa_final = total_score
 
-# --- ABA 3: GESTÃO FUNCIONÁRIOS ---
+# --- ABA 3: GESTÃO DE FUNCIONÁRIOS ---
 elif menu == "3. Gestão Funcionários":
-    st.header("👥 Cadastro e Metas Individuais")
+    st.header("👥 Gestão de Colaboradores")
     
-    # GRID PRINCIPAL DE CADASTRO
-    st.markdown("### 1. Base de Colaboradores")
-    df_funcs = pd.DataFrame(st.session_state.funcionarios)
+    # 1. GRID PRINCIPAL (CADASTRO BÁSICO)
+    st.info("Passo 1: Cadastre ou edite os dados básicos dos colaboradores aqui.")
     
-    # Vamos usar um editor mas precisamos tomar cuidado com a coluna 'Metas' que é complexa (lista)
-    # Então editamos apenas as colunas básicas aqui
-    cols_basicas = ["ID", "Nome", "Cargo", "Salario", "Tempo_Casa"]
+    # Prepara DataFrame apenas com dados planos (sem a lista de metas)
+    lista_plana = []
+    for f in st.session_state.funcionarios:
+        lista_plana.append({
+            "ID": f['ID'], 
+            "Nome": f['Nome'], 
+            "Cargo": f['Cargo'], 
+            "Salario": f['Salario'], 
+            "Tempo_Casa": f['Tempo_Casa']
+        })
+    df_plano = pd.DataFrame(lista_plana)
     
-    edited_base = st.data_editor(
-        df_funcs[cols_basicas],
+    # Editor do Grid Principal
+    edited_df_plano = st.data_editor(
+        df_plano,
+        num_rows="dynamic",
         column_config={
             "Salario": st.column_config.NumberColumn(format="$ %.2f"),
             "Cargo": st.column_config.SelectboxColumn(options=list(st.session_state.config_multiplos['Cargo']))
         },
-        num_rows="dynamic",
         use_container_width=True,
-        key="editor_funcionarios"
+        key="editor_funcionarios_v3"
     )
     
-    # Sincronizar edições básicas (preservando as Metas antigas)
-    if len(edited_base) != len(st.session_state.funcionarios):
-        # Se adicionou linha nova
-        novos_funcs = []
-        for index, row in edited_base.iterrows():
-            # Tenta achar o registro antigo para manter as metas
-            old_record = next((f for f in st.session_state.funcionarios if f['ID'] == row['ID']), None)
-            if old_record:
-                metas = old_record['Metas']
-            else:
-                metas = [{"Descricao": "Meta Padrão", "Peso": 100, "Meta": 100.0, "Realizado": 0.0}] # Default para novos
+    # SINCRONIZAÇÃO COMPLEXA (Grid -> Session State)
+    # Precisamos detectar novos, edits e deletes
+    
+    # Criar dicionário temporário para reconstruir o state
+    novos_dados_state = []
+    
+    for index, row in edited_df_plano.iterrows():
+        # Busca se esse ID já existia para preservar as metas
+        usuario_antigo = next((u for u in st.session_state.funcionarios if u['ID'] == row['ID']), None)
+        
+        if usuario_antigo:
+            metas_preservadas = usuario_antigo['Metas']
+        else:
+            # Se for novo (ID novo ou nulo), cria meta padrão
+            metas_preservadas = [{"Descricao": "Nova Meta", "Peso": 100, "Meta": 100.0, "Realizado": 0.0}]
             
-            novos_funcs.append({
-                "ID": row['ID'], "Nome": row['Nome'], "Cargo": row['Cargo'], 
-                "Salario": row['Salario'], "Tempo_Casa": row['Tempo_Casa'], "Metas": metas
-            })
-        st.session_state.funcionarios = novos_funcs
-
+        novos_dados_state.append({
+            "ID": row['ID'],
+            "Nome": row['Nome'],
+            "Cargo": row['Cargo'],
+            "Salario": row['Salario'],
+            "Tempo_Casa": row['Tempo_Casa'],
+            "Metas": metas_preservadas
+        })
+    
+    # Atualiza o banco de dados principal
+    st.session_state.funcionarios = novos_dados_state
+    
     st.divider()
     
-    # GESTÃO DE METAS INDIVIDUAIS
-    st.markdown("### 2. Detalhar Metas do Colaborador")
+    # 2. GESTÃO DE METAS (DETALHE)
+    st.info("Passo 2: Selecione um colaborador acima para editar suas metas específicas.")
     
-    # Selectbox para escolher quem editar as metas
-    opcoes = [f"{f['ID']} - {f['Nome']}" for f in st.session_state.funcionarios]
-    escolha = st.selectbox("Selecione o Colaborador para editar metas:", options=opcoes)
-    
-    if escolha:
-        id_sel = int(escolha.split(" - ")[0])
-        # Encontrar índice
-        idx = next(i for i, f in enumerate(st.session_state.funcionarios) if f['ID'] == id_sel)
+    if len(st.session_state.funcionarios) > 0:
+        opcoes = [f"{f['ID']} - {f['Nome']}" for f in st.session_state.funcionarios]
+        selection = st.selectbox("Editar Metas de:", options=opcoes)
         
-        # Editor de Metas
-        df_m = pd.DataFrame(st.session_state.funcionarios[idx]['Metas'])
-        edited_metas = st.data_editor(
-            df_m,
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "Peso": st.column_config.NumberColumn(format="%d %%", max_value=100),
-                "Realizado": st.column_config.NumberColumn(help="Valor Absoluto ou % (ex: 95 para 95%)")
-            },
-            key=f"metas_{id_sel}"
-        )
-        # Salvar metas
-        st.session_state.funcionarios[idx]['Metas'] = edited_metas.to_dict('records')
+        if selection:
+            id_sel = int(selection.split(" - ")[0])
+            # Achar indice no array
+            idx = next(i for i, f in enumerate(st.session_state.funcionarios) if f['ID'] == id_sel)
+            func_atual = st.session_state.funcionarios[idx]
+            
+            st.subheader(f"Metas de: {func_atual['Nome']}")
+            
+            # Editor de Metas
+            df_metas = pd.DataFrame(func_atual['Metas'])
+            edited_metas = st.data_editor(
+                df_metas,
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "Peso": st.column_config.NumberColumn(format="%d %%"),
+                    "Realizado": st.column_config.NumberColumn(help="Valor realizado")
+                },
+                key=f"metas_editor_{id_sel}"
+            )
+            
+            # Salvar Metas
+            st.session_state.funcionarios[idx]['Metas'] = edited_metas.to_dict('records')
+            
+            # Preview Nota
+            total_n = 0
+            for m in st.session_state.funcionarios[idx]['Metas']:
+                 atg = m['Realizado']/m['Meta'] if m['Meta']>0 else 0
+                 n = calcular_interpolacao(atg, st.session_state.config_faixas)
+                 total_n += n * (m['Peso']/100)
+            st.write(f"**Nota Individual Calculada:** {total_n:.2f}")
 
 # --- ABA 4: PAGAMENTO ---
 elif menu == "4. Simulação/Pagamento":
     st.header("💰 Folha de Pagamento")
     
     if 'nota_corporativa_final' not in st.session_state:
-        st.error("⚠️ Calcule o Resultado Corporativo primeiro.")
-        st.stop()
+        st.error("⚠️ Necessário calcular o Painel Corporativo primeiro.")
+    else:
+        nota_corp = st.session_state.nota_corporativa_final
         
-    nota_corp = st.session_state.nota_corporativa_final
-    
-    st.markdown(f"""
-    <div class='metric-card'>
-        <span class='big-font'>Nota Corporativa Atual: {nota_corp:.4f}</span>
-    </div>
-    <br>
-    """, unsafe_allow_html=True)
-
-    if st.button("Calcular Folha"):
-        dados_pagamento = []
-        
-        for f in st.session_state.funcionarios:
-            # 1. Nota Individual
-            nota_ind = 0
-            for m in f['Metas']:
-                atg = m['Realizado'] / m['Meta'] if m['Meta'] > 0 else 0
-                nota_item = calcular_interpolacao(atg, st.session_state.config_faixas)
-                nota_ind += nota_item * (m['Peso']/100)
+        if st.button("🚀 Calcular Folha de Bônus"):
+            folha = []
+            
+            for f in st.session_state.funcionarios:
+                # 1. Nota Individual
+                nota_indiv = 0
+                for m in f['Metas']:
+                    atg = m['Realizado'] / m['Meta'] if m['Meta'] > 0 else 0
+                    nt = calcular_interpolacao(atg, st.session_state.config_faixas)
+                    nota_indiv += nt * (m['Peso']/100)
                 
-            # 2. Múltiplo Salarial (Do Cargo + Nota Corp)
-            regra_mult = st.session_state.config_multiplos.loc[st.session_state.config_multiplos['Cargo'] == f['Cargo']].iloc[0]
-            mult_final = calcular_interpolacao(nota_corp, st.session_state.config_faixas, multiplos_row=regra_mult)
+                # 2. Múltiplo Cargo
+                regra_m = st.session_state.config_multiplos.loc[st.session_state.config_multiplos['Cargo'] == f['Cargo']].iloc[0]
+                mult_final = calcular_interpolacao(nota_corp, st.session_state.config_faixas, multiplos_row=regra_m)
+                
+                # 3. Fator Default
+                regra_f = st.session_state.config_fator.iloc[0]
+                fator_final = calcular_interpolacao(nota_corp, st.session_state.config_faixas, multiplos_row=regra_f)
+                
+                # 4. Cálculo
+                bonus = f['Salario'] * (f['Tempo_Casa']/12) * mult_final * nota_indiv * fator_final
+                
+                folha.append({
+                    "Nome": f['Nome'],
+                    "Cargo": f['Cargo'],
+                    "Salário": f['Salario'],
+                    "Nota Corp": nota_corp,
+                    "Múltiplo": mult_final,
+                    "Nota Indiv": nota_indiv,
+                    "Fator": fator_final,
+                    "Bônus Final": bonus
+                })
             
-            # 3. Fator Default (Opcional - usando linha 0 da config)
-            regra_fator = st.session_state.config_fator.iloc[0]
-            fator_extra = calcular_interpolacao(nota_corp, st.session_state.config_faixas, multiplos_row=regra_fator)
+            df_folha = pd.DataFrame(folha)
             
-            # 4. Cálculo
-            bonus = f['Salario'] * (f['Tempo_Casa']/12) * mult_final * nota_ind * fator_extra
+            # Formatação ajustada para não truncar e ficar legível
+            st.dataframe(df_folha.style.format({
+                "Salário": "R$ {:,.2f}",
+                "Nota Corp": "{:.2f}",
+                "Múltiplo": "{:.2f} sal.",
+                "Nota Indiv": "{:.2f}",
+                "Fator": "{:.2f}",
+                "Bônus Final": "R$ {:,.2f}"
+            }), use_container_width=True)
             
-            dados_pagamento.append({
-                "Colaborador": f['Nome'],
-                "Cargo": f['Cargo'],
-                "Salário Base": f['Salario'],
-                "Múltiplo (Corp)": mult_final,
-                "Nota Indiv.": nota_ind,
-                "Fator Ajuste": fator_extra,
-                "Bônus Final": bonus
-            })
-            
-        df_pag = pd.DataFrame(dados_pagamento)
-        st.dataframe(df_pag.style.format({
-            "Salário Base": "R$ {:,.2f}",
-            "Múltiplo (Corp)": "{:.2f} sal.",
-            "Nota Indiv.": "{:.2%}",
-            "Fator Ajuste": "{:.2f}",
-            "Bônus Final": "R$ {:,.2f}"
-        }), use_container_width=True)
-        
-        total = df_pag['Bônus Final'].sum()
-        st.metric("💰 Total da Folha", f"R$ {total:,.2f}")
+            total = df_folha['Bônus Final'].sum()
+            st.metric("Total da Folha", f"R$ {total:,.2f}")
