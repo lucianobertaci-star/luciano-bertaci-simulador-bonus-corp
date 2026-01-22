@@ -47,11 +47,11 @@ if 'config_faixas' not in st.session_state:
     ]
     st.session_state.config_faixas = pd.DataFrame(data_faixas)
 
-# 4. KPIs Corporativos (NOVO)
+# 4. KPIs Corporativos
 if 'kpis_corp' not in st.session_state:
     st.session_state.kpis_corp = [
-        {"Indicador": "Receitas", "Peso (%)": 80, "Meta ($)": 40735845.0, "Realizado ($)": 38700644.0},
-        {"Indicador": "Fluxo de Caixa", "Peso (%)": 20, "Meta ($)": 16922142.0, "Realizado ($)": 18154955.0}
+        {"Indicador": "Receitas", "Peso (%)": 80, "Meta (R$)": 40735845.0, "Realizado (R$)": 38700644.0},
+        {"Indicador": "Fluxo de Caixa", "Peso (%)": 20, "Meta (R$)": 16922142.0, "Realizado (R$)": 18154955.0}
     ]
 
 # 5. Funcionários
@@ -64,7 +64,6 @@ if 'funcionarios' not in st.session_state:
 
 # --- FUNÇÃO DE INTERPOLAÇÃO ---
 def interpolar_valores(atingimento_corp, df_origem, coluna_chave=None, valor_chave=None):
-    # Recupera gatilhos
     try:
         df_faixas = st.session_state.config_faixas
         min_g = df_faixas.loc[df_faixas['Nível']=='Mínimo', 'Gatilho'].values[0]
@@ -74,11 +73,10 @@ def interpolar_valores(atingimento_corp, df_origem, coluna_chave=None, valor_cha
         x_points = [min_g, par_g, meta_g, super_g]
     except: return 0.0
 
-    # Recupera valores Y (Múltiplos ou Fatores)
     if coluna_chave and valor_chave:
         row = df_origem[df_origem[coluna_chave] == valor_chave]
     else:
-        row = df_origem.iloc[[0]] # Pega primeira linha (Fator Global)
+        row = df_origem.iloc[[0]] 
         
     if row.empty: return 0.0
     
@@ -90,18 +88,15 @@ def interpolar_valores(atingimento_corp, df_origem, coluna_chave=None, valor_cha
     if atingimento_corp < min_g: return 0.0
     return np.interp(atingimento_corp, x_points, y_points)
 
-# --- FUNÇÃO AUXILIAR PARA NOTA PADRÃO (0.6 a 1.2) ---
-# Usada para calcular a nota de cada KPI corporativo individualmente
+# --- FUNÇÃO AUXILIAR PARA NOTA PADRÃO ---
 def interpolar_nota_padrao(atingimento):
-    # Define uma escala padrão de pontuação caso não seja salário
-    # 90% atinge 0.6 | 100% atinge 1.0 | 110% atinge 1.2
     df_faixas = st.session_state.config_faixas
     min_g = df_faixas.loc[df_faixas['Nível']=='Mínimo', 'Gatilho'].values[0]
     par_g = df_faixas.loc[df_faixas['Nível']=='Parcial', 'Gatilho'].values[0]
     meta_g = df_faixas.loc[df_faixas['Nível']=='Meta', 'Gatilho'].values[0]
     super_g = df_faixas.loc[df_faixas['Nível']=='Superado', 'Gatilho'].values[0]
     x = [min_g, par_g, meta_g, super_g]
-    y = [0.6, 0.8, 1.0, 1.2] # Score padrão
+    y = [0.6, 0.8, 1.0, 1.2]
     
     if atingimento < min_g: return 0.0
     return np.interp(atingimento, x, y)
@@ -112,12 +107,11 @@ st.markdown("""
 <style>
     .metric-card {background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid #1f77b4;}
     .formula-box {background-color: #e8f4f8; padding: 10px; border-radius: 5px; font-family: monospace; color: #0e1117;}
-    .table-container {border: 1px solid #ddd; border-radius: 5px; padding: 5px;}
 </style>
 """, unsafe_allow_html=True)
 st.markdown("---")
 
-menu = st.sidebar.radio("Navegação", ["0. Configurações Gerais", "1. Painel Corporativo", "2. Gestão de Funcionários", "3. Simulação e Pagamento"])
+menu = st.sidebar.radio("Navegação", ["0. Configurações Gerais", "1. Indicadores Corporativos", "2. Gestão de Funcionários", "3. Simulação e Pagamento"])
 
 # --- ABA 0: CONFIGURAÇÕES ---
 if menu == "0. Configurações Gerais":
@@ -156,28 +150,26 @@ if menu == "0. Configurações Gerais":
         use_container_width=True
     )
 
-# --- ABA 1: CORPORATIVO (NOVO SCORECARD) ---
-elif menu == "1. Painel Corporativo":
-    st.header("🏢 Scorecard Corporativo")
+# --- ABA 1: INDICADORES CORPORATIVOS (Renomeado) ---
+elif menu == "1. Indicadores Corporativos":
+    st.header("🏢 Indicadores Corporativos")
     
-    # 1. Input de Dados
     st.info("Cadastre os indicadores e seus respectivos pesos e resultados.")
     
     df_kpis = pd.DataFrame(st.session_state.kpis_corp)
+    # Alterado formato para R$ (Reais)
     edited_kpis = st.data_editor(
         df_kpis,
         column_config={
             "Peso (%)": st.column_config.NumberColumn(format="%d %%", min_value=0, max_value=100),
-            "Meta ($)": st.column_config.NumberColumn(format="$ %.2f"),
-            "Realizado ($)": st.column_config.NumberColumn(format="$ %.2f"),
+            "Meta (R$)": st.column_config.NumberColumn(format="R$ %.2f"),
+            "Realizado (R$)": st.column_config.NumberColumn(format="R$ %.2f"),
         },
         num_rows="dynamic",
-        use_container_width=True,
-        key="editor_kpis"
+        use_container_width=True
     )
     st.session_state.kpis_corp = edited_kpis.to_dict('records')
     
-    # 2. Processamento e Cálculo Ponderado
     st.divider()
     st.subheader("Apuração dos Resultados")
     
@@ -185,7 +177,6 @@ elif menu == "1. Painel Corporativo":
     nota_final_ponderada = 0
     tabela_detalhada = []
     
-    # Busca gatilhos para mostrar na tabela (Apenas visualização)
     df_f = st.session_state.config_faixas
     min_txt = f"{df_f.loc[df_f['Nível']=='Mínimo', 'Gatilho'].values[0]:.0%}"
     par_txt = f"{df_f.loc[df_f['Nível']=='Parcial', 'Gatilho'].values[0]:.0%}"
@@ -193,17 +184,12 @@ elif menu == "1. Painel Corporativo":
     sup_txt = f"{df_f.loc[df_f['Nível']=='Superado', 'Gatilho'].values[0]:.0%}"
     
     for item in st.session_state.kpis_corp:
-        peso = item['Peso (%)']
-        meta = item['Meta ($)']
-        real = item['Realizado ($)']
+        peso = item.get('Peso (%)', 0)
+        meta = item.get('Meta (R$)', 0) # Chave ajustada para R$
+        real = item.get('Realizado (R$)', 0) # Chave ajustada para R$
         
-        # Atingimento do Item
         atingimento = real / meta if meta > 0 else 0
-        
-        # Nota Interpolada deste item (Base 0.6 a 1.2)
         nota_item = interpolar_nota_padrao(atingimento)
-        
-        # Contribuição Ponderada
         contrib = nota_item * (peso / 100)
         
         total_peso += peso
@@ -213,36 +199,33 @@ elif menu == "1. Painel Corporativo":
             "Indicadores": item['Indicador'],
             "Peso": f"{peso}%",
             "Mínimo": min_txt, "Parcial": par_txt, "Meta": met_txt, "Superado": sup_txt,
-            "Meta ($)": meta,
-            "Realizado ($)": real,
+            "Meta (R$)": meta,
+            "Realizado (R$)": real,
             "% Atingimento": atingimento,
             "Nota Interpolada": nota_item
         })
         
-    # Exibição da Tabela "Estilo Excel" solicitado
     df_display = pd.DataFrame(tabela_detalhada)
+    # Formatação visual para R$
     st.dataframe(
         df_display.style.format({
-            "Meta ($)": "R$ {:,.2f}", 
-            "Realizado ($)": "R$ {:,.2f}",
+            "Meta (R$)": "R$ {:,.2f}", 
+            "Realizado (R$)": "R$ {:,.2f}",
             "% Atingimento": "{:.2%}",
             "Nota Interpolada": "{:.2f}"
         }),
         use_container_width=True
     )
     
-    # Validações e Totais
     c1, c2 = st.columns(2)
     if total_peso != 100:
-        c1.error(f"⚠️ A soma dos pesos é {total_peso}%. Ajuste para 100%.")
+        c1.error(f"⚠️ Soma dos pesos: {total_peso}%. Ajuste para 100%.")
     else:
-        c1.metric("Nota Corporativa Final (Ponderada)", f"{nota_final_ponderada:.4f}")
-        c1.success("Pesos validados (100%)")
+        c1.metric("Nota Corporativa Final", f"{nota_final_ponderada:.4f}")
         
-    # Salva para usar na simulação
     st.session_state.nota_corporativa_final = nota_final_ponderada
 
-# --- ABA 2: FUNCIONÁRIOS ---
+# --- ABA 2: FUNCIONÁRIOS (Igual V2.4) ---
 elif menu == "2. Gestão de Funcionários":
     st.header("👥 Cadastro de Colaboradores")
     with st.expander("➕ Adicionar Novo", expanded=False):
@@ -264,15 +247,13 @@ elif menu == "2. Gestão de Funcionários":
             st.session_state.funcionarios = []
             st.rerun()
 
-# --- ABA 3: SIMULAÇÃO ---
+# --- ABA 3: SIMULAÇÃO (Igual V2.4) ---
 elif menu == "3. Simulação e Pagamento":
     st.header("💰 Simulação de Pagamento")
     
     if 'nota_corporativa_final' not in st.session_state:
-        st.warning("⚠️ Calcule o Scorecard Corporativo na Aba 1 primeiro.")
+        st.warning("⚠️ Calcule os Indicadores Corporativos na Aba 1 primeiro.")
     else:
-        # A Nota Corporativa Final agora age como o "Atingimento Global" para buscar o múltiplo
-        # Se a nota final for 1.05, significa que a empresa atingiu 105% da meta agregada
         nota_corp = st.session_state.nota_corporativa_final
         
         st.markdown("### 📐 Fórmula de Cálculo")
@@ -302,13 +283,10 @@ elif menu == "3. Simulação e Pagamento":
                 res = []
                 total = 0
                 
-                # Fator Global é baseado na Nota Corp Final
                 fator_glob = interpolar_valores(nota_corp, st.session_state.config_fator)
                 
                 for i, row in edited_df.iterrows():
-                    # Múltiplo do cargo também baseado na Nota Corp Final
                     mult = interpolar_valores(nota_corp, st.session_state.config_multiplos, "Cargo", row['Cargo'])
-                    
                     tempo = row['Tempo_Casa_Meses'] / 12
                     indiv = row['Performance_Individual']
                     bonus = row['Salario'] * tempo * mult * indiv * fator_glob
